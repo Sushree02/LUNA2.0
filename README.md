@@ -2,6 +2,9 @@
 
 LUNA is a small music-app project built around the original LUNA UI and local browser storage.
 
+## LIVE DEMO 
+https://luna-2-0-wine.vercel.app/
+
 ## What this version keeps
 
 - Original LUNA visual design and star-field aesthetic
