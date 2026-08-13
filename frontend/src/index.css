@@ -1,0 +1,98 @@
+/* ================= IMPORTS (MUST BE FIRST) ================= */
+
+@import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700&family=Nunito:wght@300;400;500;600&display=swap");
+
+/* ================= ROOT VARIABLES ================= */
+
+:root {
+  /* Radius system */
+  --radius: 1.25rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+
+  /* Luna color palette */
+  --twilight-indigo: #1f305e;
+  --indigo-velvet: #512888;
+  --violet-twilight: #5a4fcf;
+  --soft-pink: #fda4af;
+  --lavender: #c4b5fd;
+  --periwinkle: #ccccff;
+  --deep-night: #0f0a1e;
+  --midnight: #191970;
+
+  /* Fonts */
+  --font-header: "M PLUS Rounded 1c", sans-serif;
+  --font-body: "Nunito", sans-serif;
+
+  /* Glass effect */
+  --glass-bg: rgba(31, 48, 94, 0.3);
+  --glass-border: rgba(204, 204, 255, 0.2);
+
+  /* shadcn / Tailwind tokens */
+  --background: #0f0a1e;
+  --foreground: #ccccff;
+  --card: rgba(31, 48, 94, 0.3);
+  --card-foreground: #ccccff;
+  --popover: rgba(31, 48, 94, 0.5);
+  --popover-foreground: #ccccff;
+  --primary: #5a4fcf;
+  --primary-foreground: #ccccff;
+  --secondary: #512888;
+  --secondary-foreground: #ccccff;
+  --muted: rgba(81, 40, 136, 0.3);
+  --muted-foreground: #c4b5fd;
+  --accent: #fda4af;
+  --accent-foreground: #0f0a1e;
+  --destructive: #ef4444;
+  --border: rgba(204, 204, 255, 0.2);
+  --input: rgba(204, 204, 255, 0.1);
+  --ring: #5a4fcf;
+}
+
+/* ================= BASE ================= */
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: var(--font-body);
+    background: linear-gradient(
+      135deg,
+      #0f0a1e 0%,
+      #1f305e 50%,
+      #512888 100%
+    );
+    color: var(--periwinkle);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+}
+
+/* ================= COMPONENTS ================= */
+
+@layer components {
+  .glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+  }
+
+  .glow-soft {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+  }
+
+  .glow-pink {
+    box-shadow: 0 0 15px rgba(253, 164, 175, 0.4);
+  }
+}
