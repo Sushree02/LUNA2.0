@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
 import {
   Play,
   Pause,
@@ -12,15 +17,21 @@ import {
   Repeat1,
   Timer,
 } from "lucide-react";
+
 import {
   Avatar,
   AvatarImage,
   AvatarFallback,
 } from "@/components/ui/avatar";
+
 import { StarField } from "./StarField";
+
 import { useMusicStore } from "@/store/useMusicStore";
+
 import { useNavigate } from "react-router-dom";
+
 import { formatDuration } from "@/utils/formatters";
+
 import { searchYouTubeVideo } from "@/api/youtubeSearch";
 
 export function PlayerScreen() {
@@ -42,19 +53,43 @@ export function PlayerScreen() {
     setProgress,
   } = useMusicStore();
 
-  const [ytState, setYtState] = useState<number>(-1);
-  const [duration, setDuration] = useState(0);
+  const [ytState, setYtState] =
+    useState<number>(-1);
 
-  // Sleep timer
-  const [timerOpen, setTimerOpen] = useState(false);
-  const [sleepTimerEnd, setSleepTimerEnd] = useState<number | null>(
-    null
-  );
+  const [duration, setDuration] =
+    useState(0);
+
+  /* =========================================================
+     SLEEP TIMER
+     ========================================================= */
+
+  const [timerOpen, setTimerOpen] =
+    useState(false);
+
+  const [sleepTimerEnd, setSleepTimerEnd] =
+    useState<number | null>(null);
+
   const [remainingTimerSeconds, setRemainingTimerSeconds] =
     useState(0);
 
   const autoplayLock = useRef(false);
 
+  /*
+   * Used by Media Session handlers.
+   *
+   * This allows notification controls to always
+   * communicate with the latest player state.
+   */
+  const currentSongRef =
+    useRef(currentSong);
+
+  useEffect(() => {
+    currentSongRef.current = currentSong;
+  }, [currentSong]);
+
+  /*
+   * Prevent navigating to a player with no song.
+   */
   useEffect(() => {
     if (!currentSong) {
       navigate("/");
@@ -62,19 +97,277 @@ export function PlayerScreen() {
   }, [currentSong, navigate]);
 
   const favorites =
-    libraries.find((lib) => lib.id === "favorites")?.songs || [];
+    libraries.find(
+      (lib) => lib.id === "favorites"
+    )?.songs || [];
 
   const isLiked = favorites.some(
-    (song) => song.id === currentSong?.id
+    (song) =>
+      song.id === currentSong?.id
   );
+
+  /* =========================================================
+     MEDIA SESSION
+     ========================================================= */
+
+  useEffect(() => {
+    if (!("mediaSession" in navigator)) {
+      return;
+    }
+
+    if (!currentSong) {
+      return;
+    }
+
+    /*
+     * Song artwork
+     */
+    const artwork = currentSong.cover
+      ? [
+          {
+            src: currentSong.cover,
+            sizes: "512x512",
+            type: "image/jpeg",
+          },
+        ]
+      : [];
+
+    /*
+     * Update Android / Chrome media notification
+     */
+    try {
+      navigator.mediaSession.metadata =
+        new MediaMetadata({
+          title:
+            currentSong.title ||
+            "Unknown Song",
+
+          artist:
+            currentSong.artist ||
+            "Unknown Artist",
+
+          album: "Luna",
+
+          artwork,
+        });
+    } catch (error) {
+      console.warn(
+        "LUNA Media Session metadata error:",
+        error
+      );
+    }
+
+    /*
+     * PLAY
+     */
+    try {
+      navigator.mediaSession.setActionHandler(
+        "play",
+        () => {
+          if (
+            window.player &&
+            window.playerReady
+          ) {
+            window.player.playVideo();
+
+            setIsPlaying(true);
+
+            navigator.mediaSession.playbackState =
+              "playing";
+          }
+        }
+      );
+    } catch {}
+
+    /*
+     * PAUSE
+     */
+    try {
+      navigator.mediaSession.setActionHandler(
+        "pause",
+        () => {
+          if (
+            window.player &&
+            window.playerReady
+          ) {
+            window.player.pauseVideo();
+
+            setIsPlaying(false);
+
+            navigator.mediaSession.playbackState =
+              "paused";
+          }
+        }
+      );
+    } catch {}
+
+    /*
+     * NEXT
+     */
+    try {
+      navigator.mediaSession.setActionHandler(
+        "nexttrack",
+        () => {
+          playNext();
+        }
+      );
+    } catch {}
+
+    /*
+     * PREVIOUS
+     */
+    try {
+      navigator.mediaSession.setActionHandler(
+        "previoustrack",
+        () => {
+          playPrevious();
+        }
+      );
+    } catch {}
+
+    /*
+     * SEEK BACKWARD
+     */
+    try {
+      navigator.mediaSession.setActionHandler(
+        "seekbackward",
+        (details) => {
+          if (
+            !window.player ||
+            !window.playerReady
+          ) {
+            return;
+          }
+
+          const offset =
+            details.seekOffset || 10;
+
+          const current =
+            window.player.getCurrentTime?.() ||
+            0;
+
+          window.player.seekTo(
+            Math.max(
+              0,
+              current - offset
+            ),
+            true
+          );
+        }
+      );
+    } catch {}
+
+    /*
+     * SEEK FORWARD
+     */
+    try {
+      navigator.mediaSession.setActionHandler(
+        "seekforward",
+        (details) => {
+          if (
+            !window.player ||
+            !window.playerReady
+          ) {
+            return;
+          }
+
+          const offset =
+            details.seekOffset || 10;
+
+          const current =
+            window.player.getCurrentTime?.() ||
+            0;
+
+          const total =
+            window.player.getDuration?.() ||
+            duration ||
+            0;
+
+          window.player.seekTo(
+            Math.min(
+              total || current + offset,
+              current + offset
+            ),
+            true
+          );
+        }
+      );
+    } catch {}
+
+    /*
+     * SEEK TO POSITION
+     */
+    try {
+      navigator.mediaSession.setActionHandler(
+        "seekto",
+        (details) => {
+          if (
+            !window.player ||
+            !window.playerReady ||
+            details.seekTime == null
+          ) {
+            return;
+          }
+
+          window.player.seekTo(
+            details.seekTime,
+            true
+          );
+
+          setProgress(
+            details.seekTime
+          );
+        }
+      );
+    } catch {}
+
+    /*
+     * Cleanup handlers when leaving the page.
+     */
+    return () => {
+      const actions: MediaSessionAction[] = [
+        "play",
+        "pause",
+        "nexttrack",
+        "previoustrack",
+        "seekbackward",
+        "seekforward",
+        "seekto",
+      ];
+
+      actions.forEach((action) => {
+        try {
+          navigator.mediaSession.setActionHandler(
+            action,
+            null
+          );
+        } catch {}
+      });
+    };
+  }, [
+    currentSong?.id,
+    currentSong?.title,
+    currentSong?.artist,
+    currentSong?.cover,
+    playNext,
+    playPrevious,
+    setIsPlaying,
+    setProgress,
+    duration,
+  ]);
 
   /* =========================================================
      LOAD CURRENT SONG
      ========================================================= */
 
   useEffect(() => {
-    if (!currentSong || !window.player || !window.playerReady)
+    if (
+      !currentSong ||
+      !window.player ||
+      !window.playerReady
+    ) {
       return;
+    }
 
     let cancelled = false;
 
@@ -85,31 +378,71 @@ export function PlayerScreen() {
         } official audio`.trim();
 
       let videoId =
-        useMusicStore.getState().songVideoIds[currentSong.id];
+        useMusicStore.getState()
+          .songVideoIds[
+          currentSong.id
+        ];
 
+      /*
+       * Search YouTube if we don't already
+       * have a cached video ID.
+       */
       if (!videoId) {
-        videoId = (await searchYouTubeVideo(query)) || "";
+        videoId =
+          (await searchYouTubeVideo(
+            query
+          )) || "";
 
-        if (!videoId) return;
+        if (!videoId) {
+          return;
+        }
 
-        setSongVideoId(currentSong.id, videoId);
+        setSongVideoId(
+          currentSong.id,
+          videoId
+        );
       }
 
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
 
-      window.player.loadVideoById(videoId);
+      /*
+       * Load song.
+       */
+      window.player.loadVideoById(
+        videoId
+      );
 
       const savedSeconds =
-        useMusicStore.getState().progress || 0;
+        useMusicStore.getState()
+          .progress || 0;
 
       window.setTimeout(() => {
-        if (!window.player || cancelled) return;
+        if (
+          !window.player ||
+          cancelled
+        ) {
+          return;
+        }
 
         if (savedSeconds > 0) {
-          window.player.seekTo(savedSeconds, true);
+          window.player.seekTo(
+            savedSeconds,
+            true
+          );
         }
 
         window.player.playVideo();
+
+        /*
+         * Tell Media Session that playback
+         * has started.
+         */
+        if ("mediaSession" in navigator) {
+          navigator.mediaSession.playbackState =
+            "playing";
+        }
       }, 450);
     };
 
@@ -118,64 +451,147 @@ export function PlayerScreen() {
     return () => {
       cancelled = true;
     };
-  }, [currentSong?.id, setSongVideoId]);
+  }, [
+    currentSong?.id,
+    setSongVideoId,
+  ]);
 
   /* =========================================================
      YOUTUBE PLAYER STATE
      ========================================================= */
 
   useEffect(() => {
-    if (!window.player || !window.playerReady) return;
+    if (
+      !window.player ||
+      !window.playerReady
+    ) {
+      return;
+    }
 
-    const interval = window.setInterval(() => {
-      const state = window.player.getPlayerState();
-
-      setYtState(state);
-
-      const current =
-        window.player.getCurrentTime?.() || 0;
-
-      const total =
-        window.player.getDuration?.() || 0;
-
-      if (total > 0) {
-        setDuration(total);
-        setProgress(current);
-      }
-
-      if (
-        state === window.YT.PlayerState.PLAYING
-      ) {
-        setIsPlaying(true);
-      }
-
-      if (
-        state === window.YT.PlayerState.PAUSED ||
-        state === window.YT.PlayerState.CUED
-      ) {
-        setIsPlaying(false);
-      }
-
-      if (
-        state === window.YT.PlayerState.ENDED &&
-        !autoplayLock.current
-      ) {
-        autoplayLock.current = true;
-
-        if (repeatMode === "one") {
-          window.player.seekTo(0, true);
-          window.player.playVideo();
-        } else {
-          playNext();
+    const interval =
+      window.setInterval(() => {
+        if (
+          !window.player ||
+          !window.YT?.PlayerState
+        ) {
+          return;
         }
 
-        window.setTimeout(() => {
-          autoplayLock.current = false;
-        }, 800);
-      }
-    }, 400);
+        const state =
+          window.player.getPlayerState();
 
-    return () => clearInterval(interval);
+        setYtState(state);
+
+        const current =
+          window.player.getCurrentTime?.() ||
+          0;
+
+        const total =
+          window.player.getDuration?.() ||
+          0;
+
+        if (total > 0) {
+          setDuration(total);
+          setProgress(current);
+
+          /*
+           * Update Media Session position.
+           */
+          if (
+            "mediaSession" in navigator &&
+            "setPositionState" in
+              navigator.mediaSession
+          ) {
+            try {
+              navigator.mediaSession.setPositionState(
+                {
+                  duration: Math.max(
+                    total,
+                    0.1
+                  ),
+                  playbackRate: 1,
+                  position: Math.min(
+                    Math.max(
+                      current,
+                      0
+                    ),
+                    total
+                  ),
+                }
+              );
+            } catch {}
+          }
+        }
+
+        /*
+         * PLAYING
+         */
+        if (
+          state ===
+          window.YT.PlayerState.PLAYING
+        ) {
+          setIsPlaying(true);
+
+          if (
+            "mediaSession" in navigator
+          ) {
+            navigator.mediaSession.playbackState =
+              "playing";
+          }
+        }
+
+        /*
+         * PAUSED
+         */
+        if (
+          state ===
+            window.YT.PlayerState.PAUSED ||
+          state ===
+            window.YT.PlayerState.CUED
+        ) {
+          setIsPlaying(false);
+
+          if (
+            "mediaSession" in navigator
+          ) {
+            navigator.mediaSession.playbackState =
+              "paused";
+          }
+        }
+
+        /*
+         * ENDED
+         */
+        if (
+          state ===
+            window.YT.PlayerState.ENDED &&
+          !autoplayLock.current
+        ) {
+          autoplayLock.current = true;
+
+          if (repeatMode === "one") {
+            window.player.seekTo(
+              0,
+              true
+            );
+
+            window.player.playVideo();
+          } else {
+            playNext();
+          }
+
+          window.setTimeout(() => {
+            autoplayLock.current =
+              false;
+          }, 800);
+        }
+      }, 400);
+
+    return () => {
+      window.clearInterval(
+        interval
+      );
+    };
   }, [
     playNext,
     repeatMode,
@@ -187,12 +603,19 @@ export function PlayerScreen() {
      SLEEP TIMER
      ========================================================= */
 
-  const setSleepTimer = (minutes: number) => {
+  const setSleepTimer = (
+    minutes: number
+  ) => {
     const endTime =
-      Date.now() + minutes * 60 * 1000;
+      Date.now() +
+      minutes * 60 * 1000;
 
     setSleepTimerEnd(endTime);
-    setRemainingTimerSeconds(minutes * 60);
+
+    setRemainingTimerSeconds(
+      minutes * 60
+    );
+
     setTimerOpen(false);
   };
 
@@ -203,55 +626,93 @@ export function PlayerScreen() {
   };
 
   useEffect(() => {
-    if (!sleepTimerEnd) return;
-
-    const timer = window.setInterval(() => {
-      const remaining = Math.max(
-        0,
-        Math.ceil(
-          (sleepTimerEnd - Date.now()) / 1000
-        )
-      );
-
-      setRemainingTimerSeconds(remaining);
-
-      if (remaining <= 0) {
-        window.clearInterval(timer);
-
-        if (
-          window.player &&
-          window.playerReady
-        ) {
-          window.player.pauseVideo();
-        }
-
-        setIsPlaying(false);
-        setSleepTimerEnd(null);
-        setTimerOpen(false);
-      }
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [sleepTimerEnd, setIsPlaying]);
-
-  const formatTimer = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor(
-      (seconds % 3600) / 60
-    );
-    const secs = seconds % 60;
-
-    if (hours > 0) {
-      return `${hours}:${String(minutes).padStart(
-        2,
-        "0"
-      )}:${String(secs).padStart(2, "0")}`;
+    if (!sleepTimerEnd) {
+      return;
     }
 
-    return `${minutes}:${String(secs).padStart(
-      2,
-      "0"
-    )}`;
+    const timer =
+      window.setInterval(() => {
+        const remaining =
+          Math.max(
+            0,
+            Math.ceil(
+              (sleepTimerEnd -
+                Date.now()) /
+                1000
+            )
+          );
+
+        setRemainingTimerSeconds(
+          remaining
+        );
+
+        if (remaining <= 0) {
+          window.clearInterval(
+            timer
+          );
+
+          if (
+            window.player &&
+            window.playerReady
+          ) {
+            window.player.pauseVideo();
+          }
+
+          setIsPlaying(false);
+
+          if (
+            "mediaSession" in navigator
+          ) {
+            navigator.mediaSession.playbackState =
+              "paused";
+          }
+
+          setSleepTimerEnd(null);
+          setTimerOpen(false);
+        }
+      }, 1000);
+
+    return () =>
+      window.clearInterval(
+        timer
+      );
+  }, [
+    sleepTimerEnd,
+    setIsPlaying,
+  ]);
+
+  const formatTimer = (
+    seconds: number
+  ) => {
+    const hours =
+      Math.floor(
+        seconds / 3600
+      );
+
+    const minutes =
+      Math.floor(
+        (seconds % 3600) /
+          60
+      );
+
+    const secs =
+      seconds % 60;
+
+    if (hours > 0) {
+      return `${hours}:${String(
+        minutes
+      ).padStart(
+        2,
+        "0"
+      )}:${String(secs).padStart(
+        2,
+        "0"
+      )}`;
+    }
+
+    return `${minutes}:${String(
+      secs
+    ).padStart(2, "0")}`;
   };
 
   /* =========================================================
@@ -259,8 +720,13 @@ export function PlayerScreen() {
      ========================================================= */
 
   const handlePlayPause = () => {
-    if (!window.player || !window.playerReady)
+    if (
+      !window.player ||
+      !window.playerReady ||
+      !window.YT?.PlayerState
+    ) {
       return;
+    }
 
     const playing =
       window.player.getPlayerState() ===
@@ -268,10 +734,26 @@ export function PlayerScreen() {
 
     if (playing) {
       window.player.pauseVideo();
+
       setIsPlaying(false);
+
+      if (
+        "mediaSession" in navigator
+      ) {
+        navigator.mediaSession.playbackState =
+          "paused";
+      }
     } else {
       window.player.playVideo();
+
       setIsPlaying(true);
+
+      if (
+        "mediaSession" in navigator
+      ) {
+        navigator.mediaSession.playbackState =
+          "playing";
+      }
     }
   };
 
@@ -279,18 +761,55 @@ export function PlayerScreen() {
      SEEK
      ========================================================= */
 
-  const handleSeek = (value: number) => {
-    if (!window.player || !window.playerReady)
+  const handleSeek = (
+    value: number
+  ) => {
+    if (
+      !window.player ||
+      !window.playerReady
+    ) {
       return;
+    }
 
-    window.player.seekTo(value, true);
+    window.player.seekTo(
+      value,
+      true
+    );
+
     setProgress(value);
+
+    if (
+      "mediaSession" in navigator &&
+      duration > 0 &&
+      "setPositionState" in
+        navigator.mediaSession
+    ) {
+      try {
+        navigator.mediaSession.setPositionState(
+          {
+            duration,
+            playbackRate: 1,
+            position: Math.min(
+              Math.max(
+                value,
+                0
+              ),
+              duration
+            ),
+          }
+        );
+      } catch {}
+    }
   };
 
-  if (!currentSong) return null;
+  if (!currentSong) {
+    return null;
+  }
 
   const totalDuration =
-    duration || currentSong.duration || 0;
+    duration ||
+    currentSong.duration ||
+    0;
 
   const isPlaying =
     ytState ===
@@ -305,7 +824,9 @@ export function PlayerScreen() {
         {/* Close */}
 
         <button
-          onClick={() => navigate(-1)}
+          onClick={() =>
+            navigate(-1)
+          }
           className="self-end mb-4"
           aria-label="Close player"
         >
@@ -315,7 +836,10 @@ export function PlayerScreen() {
         {/* Cover */}
 
         <Avatar className="w-64 h-64 mx-auto my-6">
-          <AvatarImage src={currentSong.cover} />
+          <AvatarImage
+            src={currentSong.cover}
+          />
+
           <AvatarFallback>
             <Music />
           </AvatarFallback>
@@ -338,13 +862,23 @@ export function PlayerScreen() {
           <input
             type="range"
             min={0}
-            max={Math.max(totalDuration, 1)}
+            max={Math.max(
+              totalDuration,
+              1
+            )}
             value={Math.min(
               progress,
-              Math.max(totalDuration, 1)
+              Math.max(
+                totalDuration,
+                1
+              )
             )}
             onChange={(e) =>
-              handleSeek(Number(e.target.value))
+              handleSeek(
+                Number(
+                  e.target.value
+                )
+              )
             }
             className="w-full my-4 cursor-pointer accent-sky-400 h-2 rounded-full"
           />
@@ -352,13 +886,17 @@ export function PlayerScreen() {
           <div className="flex justify-between text-sm opacity-70">
             <span>
               {formatDuration(
-                Math.floor(progress)
+                Math.floor(
+                  progress
+                )
               )}
             </span>
 
             <span>
               {formatDuration(
-                Math.floor(totalDuration)
+                Math.floor(
+                  totalDuration
+                )
               )}
             </span>
           </div>
@@ -367,8 +905,12 @@ export function PlayerScreen() {
 
           <div className="flex justify-center items-center gap-5 mt-6">
 
+            {/* Shuffle */}
+
             <button
-              onClick={toggleShuffle}
+              onClick={
+                toggleShuffle
+              }
               title="Shuffle"
               className={
                 shuffle
@@ -379,9 +921,13 @@ export function PlayerScreen() {
               <Shuffle size={19} />
             </button>
 
+            {/* Like */}
+
             <button
               onClick={() =>
-                toggleLike(currentSong)
+                toggleLike(
+                  currentSong
+                )
               }
               aria-label="Like"
             >
@@ -394,18 +940,28 @@ export function PlayerScreen() {
               />
             </button>
 
+            {/* Previous */}
+
             <button
-              onClick={playPrevious}
+              onClick={
+                playPrevious
+              }
               aria-label="Previous"
             >
               <SkipBack />
             </button>
 
+            {/* Play / Pause */}
+
             <button
-              onClick={handlePlayPause}
+              onClick={
+                handlePlayPause
+              }
               className="w-16 h-16 rounded-full bg-indigo-600 flex items-center justify-center"
               aria-label={
-                isPlaying ? "Pause" : "Play"
+                isPlaying
+                  ? "Pause"
+                  : "Play"
               }
             >
               {isPlaying ? (
@@ -415,6 +971,8 @@ export function PlayerScreen() {
               )}
             </button>
 
+            {/* Next */}
+
             <button
               onClick={playNext}
               aria-label="Next"
@@ -422,8 +980,12 @@ export function PlayerScreen() {
               <SkipForward />
             </button>
 
+            {/* Repeat */}
+
             <button
-              onClick={cycleRepeat}
+              onClick={
+                cycleRepeat
+              }
               title={`Repeat: ${repeatMode}`}
               className={
                 repeatMode !== "off"
@@ -431,10 +993,15 @@ export function PlayerScreen() {
                   : "text-lavender"
               }
             >
-              {repeatMode === "one" ? (
-                <Repeat1 size={20} />
+              {repeatMode ===
+              "one" ? (
+                <Repeat1
+                  size={20}
+                />
               ) : (
-                <Repeat size={20} />
+                <Repeat
+                  size={20}
+                />
               )}
             </button>
 
@@ -449,7 +1016,8 @@ export function PlayerScreen() {
             <button
               onClick={() =>
                 setTimerOpen(
-                  (value) => !value
+                  (value) =>
+                    !value
                 )
               }
               className={`mx-auto flex items-center justify-center gap-2 px-4 py-2 rounded-full transition ${
@@ -468,7 +1036,9 @@ export function PlayerScreen() {
                   )}
                 </span>
               ) : (
-                <span>Sleep Timer</span>
+                <span>
+                  Sleep Timer
+                </span>
               )}
             </button>
 
@@ -483,7 +1053,9 @@ export function PlayerScreen() {
 
                   <button
                     onClick={() =>
-                      setSleepTimer(15)
+                      setSleepTimer(
+                        15
+                      )
                     }
                     className="py-2 rounded-xl bg-white/5 text-white text-sm hover:bg-white/10"
                   >
@@ -492,7 +1064,9 @@ export function PlayerScreen() {
 
                   <button
                     onClick={() =>
-                      setSleepTimer(30)
+                      setSleepTimer(
+                        30
+                      )
                     }
                     className="py-2 rounded-xl bg-white/5 text-white text-sm hover:bg-white/10"
                   >
@@ -501,7 +1075,9 @@ export function PlayerScreen() {
 
                   <button
                     onClick={() =>
-                      setSleepTimer(60)
+                      setSleepTimer(
+                        60
+                      )
                     }
                     className="py-2 rounded-xl bg-white/5 text-white text-sm hover:bg-white/10"
                   >
@@ -525,7 +1101,6 @@ export function PlayerScreen() {
             )}
 
           </div>
-
         </div>
       </div>
     </div>
