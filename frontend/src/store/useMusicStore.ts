@@ -3,7 +3,6 @@ import type { Song, MoodBlock, Library } from "@/types";
 import { searchMusic, getMoodSongs } from "@/api/musicApi";
 import { getSession } from "@/auth";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 const userId = getSession()?.id || "guest";
 const key = (base: string) => `luna_${base}_${userId}`;
 
